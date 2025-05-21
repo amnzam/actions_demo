@@ -202,6 +202,6 @@
       async: 1
       poll: 0
 
-    - name: Final message
-      debug:
-        msg: "System is rebooting. Please wait a few minutes and then reconnect using port {{ ssh_port }}"
+    # - name: Final message
+    #   debug:
+    #     msg: "System is rebooting. Please wait a few minutes and then reconnect using port {{ ssh_port }}"
