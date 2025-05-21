@@ -197,11 +197,11 @@
         mode: '0600'
       when: ssh_public_key is defined
 
-    # - name: Reboot the system
-    #   shell: "sleep 2 && reboot"
-    #   async: 1
-    #   poll: 0
+    - name: Reboot the system
+      shell: "sleep 2 && reboot"
+      async: 1
+      poll: 0
 
-    # - name: Final message
-    #   debug:
-    #     msg: "System is rebooting. Please wait a few minutes and then reconnect using port {{ ssh_port }}"
+    - name: Final message
+      debug:
+        msg: "System is rebooting. Please wait a few minutes and then reconnect using port {{ ssh_port }}"
