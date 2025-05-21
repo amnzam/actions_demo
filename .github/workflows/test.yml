@@ -1,0 +1,53 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - test   # Change to your test branch if needed
+
+env:
+  APP: actions_demo
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fetch all tags
+        run: git fetch --tags
+
+      - name: Get latest tag
+        id: get_tag
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Get last merge commit message
+        id: commit_msg
+        run: |
+          MSG=$(git log -1 --pretty=%B)
+          echo "msg<<EOF" >> $GITHUB_OUTPUT
+          echo "$MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Calculate next version
+        id: next_version
+        run: |
+          TAG="${{ steps.get_tag.outputs.latest_tag }}"
+          TAG=${TAG#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$TAG"
+          MSG="${{ steps.commit_msg.outputs.msg }}"
+          # Only check the first line of the commit message for type
+          FIRST_LINE=$(echo "$MSG" | head -n 1)
+          if [[ "$FIRST_LINE" == feature:* ]]; then
+            MINOR=$((MINOR+1))
+            PATCH=0
+          else
+            PATCH=$((PATCH+1))
+          fi
+          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "next_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
