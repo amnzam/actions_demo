@@ -1,0 +1,207 @@
+
+---
+- name: Port redirection with iptables
+  hosts: all
+  become: true
+  
+  tasks:
+    - name: Verify required variables are defined
+      fail:
+        msg: "Please specify target_ip, target_port1, ssh_public_key, and ssh_port using -e parameter"
+      when: target_ip is not defined or target_port1 is not defined or ssh_public_key is not defined or ssh_port is not defined
+
+    - name: Update and upgrade APT packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install iptables-persistent
+      apt:
+        name: iptables-persistent
+        state: present
+        update_cache: yes
+
+    - name: Allow established and related connections (INPUT)
+      iptables:
+        chain: INPUT
+        ctstate: ESTABLISHED,RELATED
+        jump: ACCEPT
+        comment: "Allow established and related connections"
+
+    - name: Allow established and related connections (FORWARD)
+      iptables:
+        chain: FORWARD
+        ctstate: ESTABLISHED,RELATED
+        jump: ACCEPT
+        comment: "Allow established and related connections"
+
+    - name: Allow ICMP
+      iptables:
+        chain: INPUT
+        protocol: icmp
+        jump: ACCEPT
+        comment: "Allow ICMP packets"
+
+    - name: Allow new SSH
+      iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: "{{ ssh_port }}"
+        jump: ACCEPT
+        comment: "Allow SSH access"
+
+    - name: Allow port 443 (TCP)
+      iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: 443
+        jump: ACCEPT
+        comment: "Allow HTTPS TCP"
+
+    - name: Allow port 443 (UDP)
+      iptables:
+        chain: INPUT
+        protocol: udp
+        destination_port: 443
+        jump: ACCEPT
+        comment: "Allow HTTPS UDP"
+
+    - name: Allow loopback traffic
+      iptables:
+        chain: INPUT
+        in_interface: lo
+        jump: ACCEPT
+
+    - name: Allow target_port2 TCP traffic
+      iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: "{{ target_port2 }}"
+        jump: ACCEPT
+        comment: "Allow target_port2 TCP"
+      when: target_port2 | default(false)
+
+    - name: Allow target_port2 UDP traffic
+      iptables:
+        chain: INPUT
+        protocol: udp
+        destination_port: "{{ target_port2 }}"
+        jump: ACCEPT
+        comment: "Allow target_port2 UDP"
+      when: target_port2 | default(false)
+
+    - name: Set DROP policy for INPUT chain only
+      iptables:
+        chain: INPUT
+        policy: DROP
+
+    - name: Set ACCEPT policy for FORWARD chain
+      iptables:
+        chain: FORWARD
+        policy: ACCEPT
+
+    - name: Set up MASQUERADE for NAT
+      iptables:
+        table: nat
+        chain: POSTROUTING
+        jump: MASQUERADE
+        out_interface: "{{ ansible_default_ipv4.interface }}"
+
+    - name: Set up TCP port forwarding for port1
+      iptables:
+        table: nat
+        chain: PREROUTING
+        protocol: tcp
+        destination_port: "{{ target_port1 }}"
+        jump: DNAT
+        to_destination: "{{ target_ip }}:{{ target_port1 }}"
+
+    - name: Set up UDP port forwarding for port1
+      iptables:
+        table: nat
+        chain: PREROUTING
+        protocol: udp
+        destination_port: "{{ target_port1 }}"
+        jump: DNAT
+        to_destination: "{{ target_ip }}:{{ target_port1 }}"
+
+    - name: Set up TCP port forwarding for port2
+      iptables:
+        table: nat
+        chain: PREROUTING
+        protocol: tcp
+        destination_port: "{{ target_port2 }}"
+        jump: DNAT
+        to_destination: "{{ target_ip }}:{{ target_port2 }}"
+      when: target_port2 | default(false)
+
+    - name: Set up UDP port forwarding for port2
+      iptables:
+        table: nat
+        chain: PREROUTING
+        protocol: udp
+        destination_port: "{{ target_port2 }}"
+        jump: DNAT
+        to_destination: "{{ target_ip }}:{{ target_port2 }}"
+      when: target_port2 | default(false)
+
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        state: present
+        reload: yes
+
+    - name: Save iptables rules
+      shell: netfilter-persistent save
+
+    - name: Create Ansible temp directory with correct permissions
+      file:
+        path: /root/.ansible/tmp
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+
+    - name: Update SSH port
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?Port '
+        line: 'Port {{ ssh_port }}'
+        backup: yes
+
+    - name: Comment out Include line in sshd_config
+      replace:
+        path: /etc/ssh/sshd_config
+        regexp: '^Include /etc/ssh/sshd_config.d/\*\.conf'
+        replace: '# Include /etc/ssh/sshd_config.d/*.conf'
+
+    - name: Disable password authentication for root
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin prohibit-password'
+
+    - name: Ensure .ssh directory exists for root
+      file:
+        path: /root/.ssh
+        state: directory
+        mode: '0700'
+
+    - name: Add SSH public key to authorized_keys
+      lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ ssh_public_key }}"
+        create: yes
+        mode: '0600'
+      when: ssh_public_key is defined
+
+    - name: Reboot the system
+      shell: "sleep 2 && reboot"
+      async: 1
+      poll: 0
+
+    - name: Final message
+      debug:
+        msg: "System is rebooting. Please wait a few minutes and then reconnect using port {{ ssh_port }}"
