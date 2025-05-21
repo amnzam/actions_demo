@@ -47,8 +47,7 @@ jobs:
           TAG=${TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$TAG"
           MSG="${{ steps.commit_msg.outputs.msg }}"
-          FIRST_LINE=$(echo "$MSG" | head -n 1)
-          if [[ "$FIRST_LINE" == feature:* ]]; then
+          if echo "$MSG" | grep -q "^feature:"; then
             MINOR=$((MINOR+1))
             PATCH=0
           else
